@@ -37,10 +37,12 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     function setAdmin(uint256 tokenId, address newAdmin) public virtual override {
         // Owner of NFT can set admin, only if admin not already set
         // Or admin can replace themselves
+        // new admin must be contract account
         require(
             msg.sender == getAdmin(tokenId) || (msg.sender == ownerOf(tokenId) && !_existsAdmin(tokenId)),
-            "ERC721Admin: not allowed to set admin"
+            "ERC721Admin: caller not allowed to set admin"
         );
+        require(_isContract(newAdmin), "ERC721Admin: new admin must be contract account");
         _admins[tokenId] = newAdmin;
     }
 
@@ -48,17 +50,6 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     function burnAdmin(uint256 tokenId) public virtual override {
         require((msg.sender == getAdmin(tokenId)), "ERC721Admin: caller not admin");
         _admins[tokenId] = address(0);
-    }
-
-    function canTransfer(uint256 tokenId, address spender) public view virtual returns (bool) {
-        return IERC721(this).ownerOf(tokenId) != spender;
-    }
-
-    /**
-     * @notice Returns whether admin exists for `tokenId.
-     */
-    function _existsAdmin(uint256 tokenId) internal view virtual returns (bool) {
-        return _admins[tokenId] != address(0);
     }
 
     /**
@@ -99,6 +90,33 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
         setAdmin(tokenId, admin);
     }
 
+    /**
+    * @notice  Returns true if `account` is a contract.
+     * [IMPORTANT]
+     * ====
+     * It is unsafe to assume that an address for which this function returns
+     * false is an externally-owned account (EOA) and not a contract.
+     *
+     * Among others, `isContract` will return false for the following
+     * types of addresses:
+     *
+     *  - an externally-owned account
+     *  - a contract in construction
+     *  - an address where a contract will be created
+     *  - an address where a contract lived, but was destroyed
+    
+     */
+    function _isContract(address a) internal view virtual returns (bool) {
+        return a.code.length > 0;
+    }
+
+    /**
+     * @notice Returns whether admin exists for `tokenId.
+     */
+    function _existsAdmin(uint256 tokenId) internal view virtual returns (bool) {
+        return _admins[tokenId] != address(0);
+    }
+
     function _checkOnAdmin(
         address from,
         address to,
@@ -125,7 +143,7 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
         bytes memory _data
     ) private returns (bool) {
         // Check if contract account
-        if (to.code.length > 0) {
+        if (_isContract(to)) {
             try IERC721AdminReceiver(to).onERC721AdminReceived(msg.sender, from, tokenId, _data) returns (
                 bytes4 retval
             ) {
@@ -166,7 +184,7 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     ) internal virtual override {
         super._beforeTokenTransfer(from, to, tokenId);
 
-        // If we are not minting and admin exists forward call
+        // If we are not minting and admin exists forward call to admin
         if (from != address(0) && _existsAdmin(tokenId)) {
             require(_checkOnAdmin(from, to, tokenId), "ERC721Admin: transfer to non ERC721Receiver implementer");
         }

@@ -24,6 +24,7 @@ interface IERC721Admin is IERC721 {
     /**
      * @notice Set an admin for `tokenId
      * @dev Throws if `msg.sender` != `admin || `msg.sender == ownerOf(tokenId) && admin == address(0))
+     * @dev Throws if `!_isContract(admin)`
      * @param tokenId The id of the asset
      * @param admin The new admin
      */
