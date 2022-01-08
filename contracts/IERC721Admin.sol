@@ -35,5 +35,5 @@ interface IERC721Admin is IERC721 {
      * @dev Throws if `msg.sender` != `admin`.
      * @param tokenId The id of the asset
      */
-    function burnAdmin(uint256 tokenId) external;
+    function resetAdmin(uint256 tokenId) external;
 }

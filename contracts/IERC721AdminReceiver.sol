@@ -21,6 +21,7 @@ interface IERC721AdminReceiver {
     /// @param data Additional data with no specified format
     /// @return `bytes4(keccak256("onERC721Received(address,address,uint256,bytes)"))`
     ///  unless throwing
+    // TODO: SHould return nothing when checking if allowed transfer
     function onERC721AdminReceived(
         address operator,
         address from,

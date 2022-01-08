@@ -47,7 +47,7 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     }
 
     /// @inheritdoc IERC721Admin
-    function burnAdmin(uint256 tokenId) public virtual override {
+    function resetAdmin(uint256 tokenId) public virtual override {
         require((msg.sender == getAdmin(tokenId)), "ERC721Admin: caller not admin");
         _admins[tokenId] = address(0);
     }
@@ -144,6 +144,7 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     ) private returns (bool) {
         // Check if contract account
         if (_isContract(to)) {
+            // TODO: Remove bytes return type, should revert in case of not accapting failure
             try IERC721AdminReceiver(to).onERC721AdminReceived(msg.sender, from, tokenId, _data) returns (
                 bytes4 retval
             ) {
@@ -184,7 +185,7 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     ) internal virtual override {
         super._beforeTokenTransfer(from, to, tokenId);
 
-        // If we are not minting and admin exists forward call to admin
+        // If we are not minting and admin exists, forward call to admin and revert on failure
         if (from != address(0) && _existsAdmin(tokenId)) {
             require(_checkOnAdmin(from, to, tokenId), "ERC721Admin: transfer to non ERC721Receiver implementer");
         }
