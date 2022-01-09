@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "./IERC721Admin.sol";
-import "./IERC721AdminReceiver.sol";
+import "./IERC721AdminVerifier.sol";
 
 /**
  * @author Tony Rosler and Francesco Renzi
@@ -15,12 +15,7 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     // Mapping from token ID to the assigned admin
     mapping(uint256 => address) private _admins;
     // Mapping from `tokenId` to an approved address, which can set the admin for the `tokenId`
-    mapping(uint256 => address) private _approvedAllowance;
-
-    modifier onlyAdmin(uint256 tokenId, address admin) virtual {
-        require(_admins[tokenId] == admin, "ERC721Admin: only admin");
-        _;
-    }
+    mapping(uint256 => address) private _adminApprovals;
 
     /*******************************
      * Admin functions *
@@ -37,46 +32,54 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     }
 
     /// @inheritdoc IERC721Admin
-    function getAdminApproved(uint256 tokenId) public view virtual override returns (address) {
-        return _approvedAllowance[tokenId];
+    function getApprovedAdmin(uint256 tokenId) public view virtual override returns (address) {
+        return _adminApprovals[tokenId];
     }
 
     /// @inheritdoc IERC721Admin
     /// @dev Requirments for setting admin:
     ///      - Admin can replace themselves with other admins
-    ///      - Owners can set admin, but only if currAdmin == address(0)
+    ///      - Owners can set admin, but only if admin == address(0)
     ///      - Approved accounts can set admin, but they do not have admin rights e.g. block transfers.
-    /// NOTE: New admins must be contract accounts or address(0)
+    /// @dev New admin requirments:
+    ///      - Must be contract accounts or address(0)
+    ///      - Cannot be current admin
+    /// NOTE: We do allow admin to be set to owner or approved party
     function setAdmin(uint256 tokenId, address newAdmin) public virtual override {
-        address currAdmin = getAdmin(tokenId);
-        address currApproved = getAdminApproved(tokenId);
+        address caller = msg.sender;
+        address admin = getAdmin(tokenId);
 
-        require(
-            msg.sender == currAdmin ||
-                (currAdmin == address(0) && (msg.sender == ownerOf(tokenId) || msg.sender == currApproved)),
-            "ERC721Admin: caller not allowed to set admin"
-        );
-
-        // We handle resetAdmin flow as well
+        require(newAdmin != admin, "ERC721Admin: new admin cannot be current admin");
         require(
             _isContract(newAdmin) || newAdmin == address(0),
             "ERC721Admin: new admin must be contract account or zero address"
         );
+        require(
+            caller == admin ||
+                (admin == address(0) && (caller == ERC721.ownerOf(tokenId) || caller == getApprovedAdmin(tokenId))),
+            "ERC721Admin: caller not allowed to set admin"
+        );
 
         // Set admin and reset any approval
         _admins[tokenId] = newAdmin;
-        _approvedAllowance[tokenId] = address(0);
+        _setApproval(tokenId, address(0));
 
-        emit AdminSet(tokenId, currAdmin, newAdmin);
+        emit AdminSet(tokenId, admin, newAdmin);
     }
 
     /// @inheritdoc IERC721Admin
     function setApproval(uint256 tokenId, address recepient) public virtual override {
-        require(msg.sender == ownerOf(tokenId), "ERC721Admin: caller not allowed to set admin");
+        address owner = ERC721.ownerOf(tokenId);
+        address admin = getAdmin(tokenId);
+        address approvedOperator = getApprovedAdmin(tokenId);
 
-        _approvedAllowance[tokenId] = recepient;
+        require(msg.sender == owner, "ERC721Admin: caller not allowed to set admin");
+        require(
+            recepient != approvedOperator || recepient != admin || recepient != owner,
+            "ERC721Admin: invalid approved recepient"
+        );
 
-        emit AdminApprovalSet(tokenId, msg.sender, recepient);
+        _setApproval(tokenId, recepient);
     }
 
     /// @inheritdoc IERC721Admin
@@ -84,18 +87,24 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     /// @dev Can only be called by current admin
     /// NOTE: Resetting admin, grants owner of NFT the right to set admin again
     function resetAdmin(uint256 tokenId) public virtual override {
-        address currAdmin = getAdmin(tokenId);
-        require((msg.sender == currAdmin), "ERC721Admin: caller not admin");
+        address admin = getAdmin(tokenId);
+        require((msg.sender == admin), "ERC721Admin: caller not admin");
 
         // Set admin and reset any approval
         _admins[tokenId] = address(0);
-        _approvedAllowance[tokenId] = address(0);
+        _adminApprovals[tokenId] = address(0);
 
-        emit AdminSet(tokenId, currAdmin, address(0));
+        emit AdminSet(tokenId, admin, address(0));
+    }
+
+    function _setApproval(uint256 tokenId, address recepient) internal virtual {
+        _adminApprovals[tokenId] = recepient;
+        emit AdminApprovalSet(tokenId, ERC721.ownerOf(tokenId), recepient);
     }
 
     /**
      * @notice Safely mints `tokenId` and transfers it to `to`, and sets admin for `tokenId`
+     * @dev admin must be a contract account
      */
     function _safeMint(
         address to,
@@ -109,6 +118,7 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     /**
      * @notice Safely mints `tokenId` and transfers it to `to`, and sets admin for `tokenId`
      * @dev lets you pass `_data` which is passed to `_checkOnERC721Received()`
+     * @dev admin must be a contract account
      */
     function _safeMint(
         address to,
@@ -122,6 +132,7 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
 
     /**
      * @notice Mints `tokenId` and transfers it to `to`, and sets admin for `tokenId`
+     * @dev admin must be a contract account
      */
     function _mint(
         address to,
@@ -133,9 +144,9 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     }
 
     /**
-    * @notice  Returns true if `account` is a contract.
-     * [IMPORTANT]
-     * ====
+     * @notice  Returns true if `account` is a contract.
+     * @dev [IMPORTANT]
+     * ===================
      * It is unsafe to assume that an address for which this function returns
      * false is an externally-owned account (EOA) and not a contract.
      *
@@ -146,7 +157,6 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
      *  - a contract in construction
      *  - an address where a contract will be created
      *  - an address where a contract lived, but was destroyed
-    
      */
     function _isContract(address a) internal view virtual returns (bool) {
         return a.code.length > 0;
@@ -159,66 +169,45 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
         return _admins[tokenId] != address(0);
     }
 
-    function _checkOnAdmin(
-        address from,
-        address to,
-        uint256 tokenId
-    ) private returns (bool) {
-        return _checkOnAdmin(from, to, tokenId, "");
-    }
-
     /**
-     * @notice Internal function to invoke {IERC721Admin-onERC721AdminReceived} on a target address.
-     * @dev Will check on
-     * @dev This implementation is based on OZ {IERC721-_checkOnERC721Received}
+     * @notice Internal function to invoke {IERC721AdminVerifier-onERC721AdminVerify} on a target address.
      * @dev The call is not executed if the target address is not a contract.
      * @param from address representing the previous owner of the given token ID
      * @param to target address that will receive the tokens
      * @param tokenId uint256 ID of the token to be transferred
-     * @param _data bytes optional data to send along with the call
      * @return bool whether the call correctly returned the expected magic value
      */
     function _checkOnAdmin(
         address from,
         address to,
         uint256 tokenId,
-        bytes memory _data
+        address admin
     ) private returns (bool) {
-        // Check if contract account
-        if (_isContract(to)) {
-            // TODO: Remove bytes return type, should revert in case of not accapting failure
-            try IERC721AdminReceiver(to).onERC721AdminReceived(msg.sender, from, tokenId, _data) returns (
-                bytes4 retval
-            ) {
-                return retval == IERC721AdminReceiver.onERC721AdminReceived.selector;
-            } catch (bytes memory reason) {
-                if (reason.length == 0) {
-                    revert("ERC721Admin: admin check to non IERC721AdminReceiver implementer");
-                } else {
-                    assembly {
-                        revert(add(32, reason), mload(reason))
-                    }
+        try IERC721AdminVerifier(admin).onERC721AdminVerify(msg.sender, from, to, tokenId) returns (bytes4 retval) {
+            return retval == IERC721AdminVerifier.onERC721AdminVerify.selector;
+        } catch (bytes memory reason) {
+            if (reason.length == 0) {
+                revert("ERC721Admin: admin check to non IERC721AdminReceiver implementer");
+            } else {
+                assembly {
+                    revert(add(32, reason), mload(reason))
                 }
             }
-        } else {
-            return true;
         }
     }
 
     /**
-     * @dev Hook that is called before any token transfer. This includes minting
+     * @notice Hook that is called before any token transfer, including minting
      * and burning.
      *
-     * Calling conditions:
+     * @dev Calling conditions:
      *
      * - When `from` and `to` are both non-zero, ``from``'s `tokenId` will be
-     * transferred to `to`.
+     * transferred to `to`
      * - When `from` is zero, `tokenId` will be minted for `to`.
      * - When `to` is zero, ``from``'s `tokenId` will be burned.
      * - `from` cannot be the zero address.
      * - `to` cannot be the zero address.
-     *
-     * To learn more about hooks, head to xref:ROOT:extending-contracts.adoc#using-hooks[Using Hooks].
      */
     function _beforeTokenTransfer(
         address from,
@@ -227,9 +216,12 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     ) internal virtual override {
         super._beforeTokenTransfer(from, to, tokenId);
 
+        address admin = getAdmin((tokenId));
         // If we are not minting and admin exists, forward call to admin and revert on failure
-        if (from != address(0) && _existsAdmin(tokenId)) {
-            require(_checkOnAdmin(from, to, tokenId), "ERC721Admin: transfer to non ERC721Receiver implementer");
+        if (from != address(0) && admin != address(0)) {
+            // Check if contract account is admin, should never fail
+            assert(_isContract(admin));
+            require(_checkOnAdmin(from, to, tokenId, admin), "ERC721Admin: transfer to non ERC721Receiver implementer");
         }
     }
 }

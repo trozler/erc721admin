@@ -32,11 +32,11 @@ interface IERC721Admin is IERC721 {
     function getAdmin(uint256 tokenId) external view returns (address);
 
     /**
-     * @notice Returns approved party associated with `tokenId
+     * @notice Returns approved address associated with `tokenId
      * @param tokenId The id of the asset
      * @return The approved party address
      */
-    function getAdminApproved(uint256 tokenId) external view returns (address);
+    function getApprovedAdmin(uint256 tokenId) external view returns (address);
 
     /**
      * @notice Set admin for `tokenId
@@ -47,7 +47,7 @@ interface IERC721Admin is IERC721 {
 
     /**
      * TODO: Change language
-     * @notice Give recepient approval to set the admin for `tokenId`, whilst admin remains not set
+     * @notice Give `recepient` approval to set the admin for `tokenId`, whilst admin remains not set
      * @param tokenId The id of the asset
      * @param recepient The approved party
      */
