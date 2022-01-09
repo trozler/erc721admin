@@ -20,6 +20,11 @@ interface IERC721Admin is IERC721 {
     event AdminReset(uint256 indexed tokenId, address indexed oldAdmin, address indexed newAdmin);
 
     /**
+     * @notice Emitted when an account has been granted approval
+     */
+    event AdminApprovalSet(uint256 indexed tokenId, address indexed owner, address indexed recepient);
+
+    /**
      * @notice Returns admin associated with `tokenId
      * @param tokenId The id of the asset
      * @return The admin address
@@ -40,29 +45,17 @@ interface IERC721Admin is IERC721 {
      */
     function resetAdmin(uint256 tokenId) external;
 
-    /// @inheritdoc IERC721
-    /// @notice override transfer to block approved accounts from transfering assets
-    /// @dev we block transfers as approval defition has been changes see {IERC721-approve}
-    function safeTransferFrom(
-        address from,
-        address to,
-        uint256 tokenId,
-        bytes memory _data
-    ) external override;
-
-    /// @inheritdoc IERC721
-    /// @notice override transfer to block approved accounts from transfering assets
-    /// @dev we block transfers as approval defition has been changes see {IERC721-approve}
-    function transferFrom(
-        address from,
-        address to,
-        uint256 tokenId
-    ) external override;
+    /**
+     * @notice Returns approved address associated with `tokenId
+     * @param tokenId The id of the asset
+     * @return The approved party address
+     */
+    function getApprovedAdmin(uint256 tokenId) external view returns (address);
 
     /**
-     * @notice owner can grant `to` the right to set admin, whilst admin remains `address(0)`
+     * @notice Owner can grant `to` the right to set admin, whilst admin remains `address(0)`
      * @param to The approved party
      * @param tokenId The id of the asset
      */
-    function approve(address to, uint256 tokenId) external override;
+    function setApprovalAdmin(address to, uint256 tokenId) external;
 }

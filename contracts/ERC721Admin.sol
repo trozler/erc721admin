@@ -15,6 +15,9 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     // Mapping from token ID to the assigned admin
     mapping(uint256 => address) private _admins;
 
+    // Mapping from `tokenId` to an approved address, which can set the admin for the `tokenId`
+    mapping(uint256 => address) private _adminApprovals;
+
     /*******************************
      * Admin functions *
      *******************************/
@@ -46,12 +49,12 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
 
         bool isAdminCall = caller == admin;
         bool isOwnerCall = admin == address(0) && caller == ERC721.ownerOf(tokenId);
-        bool isApproverCall = admin == address(0) && caller == ERC721.getApproved(tokenId);
+        bool isApproverCall = admin == address(0) && caller == getApprovedAdmin(tokenId);
         require(isAdminCall || isOwnerCall || isApproverCall, "ERC721Admin: caller not allowed to set admin");
 
         // Set admin
         _admins[tokenId] = newAdmin;
-        _approve(address(0), tokenId);
+        _setApprovalAdmin(address(0), tokenId);
 
         emit AdminSet(tokenId, admin, newAdmin);
     }
@@ -66,9 +69,13 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
 
         // Set admin and reset any approval
         _admins[tokenId] = address(0);
-        _approve(address(0), tokenId);
+        _setApprovalAdmin(address(0), tokenId);
 
         emit AdminSet(tokenId, admin, address(0));
+    }
+
+    function getApprovedAdmin(uint256 tokenId) public view virtual override returns (address) {
+        return _adminApprovals[tokenId];
     }
 
     /*****************************
@@ -81,47 +88,22 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     }
 
     /// @inheritdoc IERC721Admin
-    /// @dev we do not allow for "approved" accounts to transfer away the NFT,
-    ///      since the role of the approved account is redefined.
-    function transferFrom(
-        address from,
-        address to,
-        uint256 tokenId
-    ) public virtual override(IERC721Admin, ERC721) {
-        require(_exists(tokenId), "ERC721Admin: operator query for nonexistent token");
-        require(msg.sender == ERC721.ownerOf(tokenId), "ERC721Admin: only owner can transfer asset");
-        _transfer(from, to, tokenId);
-    }
-
-    /// @inheritdoc IERC721Admin
-    /// @dev we do not allow for "approved" accounts to transfer away the NFT,
-    ///      since the role of the approved account is redefined.
-    function safeTransferFrom(
-        address from,
-        address to,
-        uint256 tokenId,
-        bytes memory _data
-    ) public virtual override(IERC721Admin, ERC721) {
-        require(_exists(tokenId), "ERC721Admin: operator query for nonexistent token");
-        require(msg.sender == ERC721.ownerOf(tokenId), "ERC721Admin: only owner can transfer asset");
-        _safeTransfer(from, to, tokenId, _data);
-    }
-
-    /// @inheritdoc IERC721Admin
-    /// @dev Overrides notion of what it means to `approve`,
-    ///      approved accounts can set the admin for a `tokenId` if it is not already set.
-    function approve(address to, uint256 tokenId) public virtual override(IERC721Admin, ERC721) {
-        address caller = msg.sender;
+    function setApprovalAdmin(address to, uint256 tokenId) public virtual override {
         address owner = ERC721.ownerOf(tokenId);
         address admin = getAdmin(tokenId);
-        address approvedOperator = ERC721.getApproved(tokenId);
+        address approvedOperator = getApprovedAdmin(tokenId);
 
         require(
-            to != admin && to != owner && to != approvedOperator && !isApprovedForAll(owner, caller),
+            to != admin && to != owner && to != approvedOperator,
             "ERC721Admin: cannot approve admin, owner or already approved"
         );
 
-        _approve(to, tokenId);
+        _setApprovalAdmin(to, tokenId);
+    }
+
+    function _setApprovalAdmin(address to, uint256 tokenId) internal virtual {
+        _adminApprovals[tokenId] = to;
+        emit AdminApprovalSet(tokenId, ERC721.ownerOf(tokenId), to);
     }
 
     /// @notice Safely mints `tokenId` and transfers it to `to`, and sets admin for `tokenId`
