@@ -7,12 +7,15 @@ import "./IERC721Admin.sol";
 import "./IERC721AdminReceiver.sol";
 
 /**
+ * @author Tony Rosler and Francesco Renzi
  * @notice This implements an optional extension of {ERC721}, as defined in ERCxxx
  * @dev An extra "admin" role is established, which is a super user for a given `tokenId`
  */
 abstract contract ERC721Admin is ERC721, IERC721Admin {
     // Mapping from token ID to the assigned admin
     mapping(uint256 => address) private _admins;
+    // Mapping from `tokenId` to an approved address, which can set the admin for the `tokenId`
+    mapping(uint256 => address) private _approvedAllowance;
 
     modifier onlyAdmin(uint256 tokenId, address admin) virtual {
         require(_admins[tokenId] == admin, "ERC721Admin: only admin");
@@ -34,22 +37,61 @@ abstract contract ERC721Admin is ERC721, IERC721Admin {
     }
 
     /// @inheritdoc IERC721Admin
-    function setAdmin(uint256 tokenId, address newAdmin) public virtual override {
-        // Owner of NFT can set admin, only if admin not already set
-        // Or admin can replace themselves
-        // new admin must be contract account
-        require(
-            msg.sender == getAdmin(tokenId) || (msg.sender == ownerOf(tokenId) && !_existsAdmin(tokenId)),
-            "ERC721Admin: caller not allowed to set admin"
-        );
-        require(_isContract(newAdmin), "ERC721Admin: new admin must be contract account");
-        _admins[tokenId] = newAdmin;
+    function getAdminApproved(uint256 tokenId) public view virtual override returns (address) {
+        return _approvedAllowance[tokenId];
     }
 
     /// @inheritdoc IERC721Admin
+    /// @dev Requirments for setting admin:
+    ///      - Admin can replace themselves with other admins
+    ///      - Owners can set admin, but only if currAdmin == address(0)
+    ///      - Approved accounts can set admin, but they do not have admin rights e.g. block transfers.
+    /// NOTE: New admins must be contract accounts or address(0)
+    function setAdmin(uint256 tokenId, address newAdmin) public virtual override {
+        address currAdmin = getAdmin(tokenId);
+        address currApproved = getAdminApproved(tokenId);
+
+        require(
+            msg.sender == currAdmin ||
+                (currAdmin == address(0) && (msg.sender == ownerOf(tokenId) || msg.sender == currApproved)),
+            "ERC721Admin: caller not allowed to set admin"
+        );
+
+        // We handle resetAdmin flow as well
+        require(
+            _isContract(newAdmin) || newAdmin == address(0),
+            "ERC721Admin: new admin must be contract account or zero address"
+        );
+
+        // Set admin and reset any approval
+        _admins[tokenId] = newAdmin;
+        _approvedAllowance[tokenId] = address(0);
+
+        emit AdminSet(tokenId, currAdmin, newAdmin);
+    }
+
+    /// @inheritdoc IERC721Admin
+    function setApproval(uint256 tokenId, address recepient) public virtual override {
+        require(msg.sender == ownerOf(tokenId), "ERC721Admin: caller not allowed to set admin");
+
+        _approvedAllowance[tokenId] = recepient;
+
+        emit AdminApprovalSet(tokenId, msg.sender, recepient);
+    }
+
+    /// @inheritdoc IERC721Admin
+    /// @dev Convenience function that can be used to reset admin
+    /// @dev Can only be called by current admin
+    /// NOTE: Resetting admin, grants owner of NFT the right to set admin again
     function resetAdmin(uint256 tokenId) public virtual override {
-        require((msg.sender == getAdmin(tokenId)), "ERC721Admin: caller not admin");
+        address currAdmin = getAdmin(tokenId);
+        require((msg.sender == currAdmin), "ERC721Admin: caller not admin");
+
+        // Set admin and reset any approval
         _admins[tokenId] = address(0);
+        _approvedAllowance[tokenId] = address(0);
+
+        emit AdminSet(tokenId, currAdmin, address(0));
     }
 
     /**
