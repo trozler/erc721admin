@@ -20,23 +20,11 @@ interface IERC721Admin is IERC721 {
     event AdminReset(uint256 indexed tokenId, address indexed oldAdmin, address indexed newAdmin);
 
     /**
-     * @notice Emitted when an account has been granted approval
-     */
-    event AdminApprovalSet(uint256 indexed tokenId, address indexed owner, address indexed recepient);
-
-    /**
      * @notice Returns admin associated with `tokenId
      * @param tokenId The id of the asset
      * @return The admin address
      */
     function getAdmin(uint256 tokenId) external view returns (address);
-
-    /**
-     * @notice Returns approved address associated with `tokenId
-     * @param tokenId The id of the asset
-     * @return The approved party address
-     */
-    function getApprovedAdmin(uint256 tokenId) external view returns (address);
 
     /**
      * @notice Set admin for `tokenId
@@ -46,17 +34,35 @@ interface IERC721Admin is IERC721 {
     function setAdmin(uint256 tokenId, address newAdmin) external;
 
     /**
-     * TODO: Change language
-     * @notice Give `recepient` approval to set the admin for `tokenId`, whilst admin remains not set
-     * @param tokenId The id of the asset
-     * @param recepient The approved party
-     */
-    function setApproval(uint256 tokenId, address recepient) external;
-
-    /**
      * @notice Reset admin, reinstating the NFT owner the right to set a new admin
      * @dev Throws if `msg.sender` != `admin`.
      * @param tokenId The id of the asset
      */
     function resetAdmin(uint256 tokenId) external;
+
+    /// @inheritdoc IERC721
+    /// @notice override transfer to block approved accounts from transfering assets
+    /// @dev we block transfers as approval defition has been changes see {IERC721-approve}
+    function safeTransferFrom(
+        address from,
+        address to,
+        uint256 tokenId,
+        bytes memory _data
+    ) external override;
+
+    /// @inheritdoc IERC721
+    /// @notice override transfer to block approved accounts from transfering assets
+    /// @dev we block transfers as approval defition has been changes see {IERC721-approve}
+    function transferFrom(
+        address from,
+        address to,
+        uint256 tokenId
+    ) external override;
+
+    /**
+     * @notice owner can grant `to` the right to set admin, whilst admin remains `address(0)`
+     * @param to The approved party
+     * @param tokenId The id of the asset
+     */
+    function approve(address to, uint256 tokenId) external override;
 }
